@@ -6,25 +6,35 @@
 const hre = require('hardhat');
 require('dotenv').config();
 
-const MASTER_CHEF = '';
-const MARS_ADDRESS = '0x593B8E416aec29C3922A6768c7C14D8fA3553Dd0';
-const DEV_ADDRESS = '0x37dAFCcEEA6244e077d08D4C18705a0301DA6102';
-const FEE_ADDRESS = '0x37dAFCcEEA6244e077d08D4C18705a0301DA6102';
-const MARS_PER_BLOCK = 260000000000000000;
+const NATIVE_TOKEN_HOLDER_VAULT = '0x6bbF5F13d14f12b5C9876F0C69aaa5574f558819';
+const MASTER_CHEF = '0x0272af6574f9b8C4813Dcb3a202bEad2151b0Ac3';
+const MARS_ADDRESS = '0xf1a71bcce29b598d812a30baedff860a7dce0aff';
+const DEV_ADDRESS = '0xf430b4fe0b47577018df4dea86f89ac7da55eca3';
+const FEE_ADDRESS = '0xf430b4fe0b47577018df4dea86f89ac7da55eca3';
+const MARS_PER_BLOCK = '300000000000000000';
 const START_BLOCK = 8557015;
+
+const deployNativeTokenHolderVault = async () => {
+  const NativeTokenHolderVault = await hre.ethers.getContractFactory('NativeTokenHolderVault');
+  const nativeTokenHolderVault = await NativeTokenHolderVault.deploy();
+  await nativeTokenHolderVault.deployed();
+
+  console.log('[deployNativeTokenHolderVault] nativeTokenHolderVault deployed to: ', nativeTokenHolderVault.address);
+};
 
 const deployMasterchef = async () => {
   if (MARS_ADDRESS) {
     const MasterchefContract = await hre.ethers.getContractFactory('Masterchef');
-    const masterchefContract = await MasterchefContract.deploy(MARS_ADDRESS, DEV_ADDRESS, FEE_ADDRESS, '260000000000000000', START_BLOCK);
-  
+    const masterchefContract = await MasterchefContract.deploy(MARS_ADDRESS, DEV_ADDRESS, FEE_ADDRESS, MARS_PER_BLOCK, START_BLOCK, NATIVE_TOKEN_HOLDER_VAULT);
+
     await masterchefContract.deployed();
     console.log('[deployMasterchef] masterchefContract deployed to: ', masterchefContract.address);
   }
 };
 
 async function main() {
-  await deployMasterchef();
+  await deployNativeTokenHolderVault();
+  // await deployMasterchef();
 }
 
 // We recommend this pattern to be able to use async/await everywhere

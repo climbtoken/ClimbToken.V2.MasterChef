@@ -6,6 +6,7 @@ import '@openzeppelin/contracts/utils/math/SafeMath.sol';
 
 import './interfaces/IBEP20.sol';
 import './interfaces/IMars.sol';
+import './interfaces/INativeTokenHolderVault.sol';
 import './utils/SafeBEP20.sol';
 
 // MasterChef is the master of Mars. He can make Mars and he is a fair guy.
@@ -48,20 +49,17 @@ contract Masterchef is Ownable {
     // Withdraw fee address
     address public treasuryAddress;
 
-    address public climb;
-
     // Info of each pool.
     PoolInfo[] public poolInfo;
     // Info of each user that stakes LP tokens.
     mapping (uint256 => mapping (address => UserInfo)) public userInfo;
-    // climb holder list
-    address[] public climbHolders;
     // Total allocation points. Must be the sum of all allocation points in all pools.
     uint256 public totalAllocPoint = 0;
     // The block number when Mars mining starts.
     uint256 public startBlock;
+    INativeTokenHolderVault public nativeTokenHolderVault;
 
-    uint256 public WITHDRAWAL_FEE_DEDUCT_PERIOD = 3 days;
+    uint256 public WITHDRAWAL_FEE_DEDUCT_PERIOD = 5 minutes;
     uint256 public withdrawFee = 200;   // 2% for withdraw fee
     uint256 public deductedWithdrawFee = 50;    // .5% for deducted withdraw fee
 
@@ -74,7 +72,8 @@ contract Masterchef is Ownable {
         address _devaddr,
         address _feeAddress,
         uint256 _marsPerBlock,
-        uint256 _startBlock
+        uint256 _startBlock,
+        address _nativeTokenHolderVault
     ) public {
         mars = _mars;
         devaddr = _devaddr;
@@ -82,7 +81,7 @@ contract Masterchef is Ownable {
         treasuryAddress = msg.sender;
         marsPerBlock = _marsPerBlock;
         startBlock = _startBlock;
-        climb = 0x2A1d286ed5edAD78BeFD6E0d8BEb38791e8cD69d;
+        nativeTokenHolderVault = INativeTokenHolderVault(_nativeTokenHolderVault);
     }
 
     function poolLength() external view returns (uint256) {
@@ -177,21 +176,17 @@ contract Masterchef is Ownable {
         }
         if(_amount > 0) {
             pool.lpToken.safeTransferFrom(address(msg.sender), address(this), _amount);
+            user.depositedAt = block.timestamp;
             if(pool.depositFeeBP > 0){
                 uint256 depositFee = _amount.mul(pool.depositFeeBP).div(10000);
                 pool.lpToken.safeTransfer(feeAddress, depositFee);
-                if (address(pool.lpToken) == climb) {
-                    if (user.amount == 0) {
-                        climbHolders.push(msg.sender);
-                    }
-                }
+                nativeTokenHolderVault.updateHolders(msg.sender, address(pool.lpToken), user.amount, true);
                 user.amount = user.amount.add(_amount).sub(depositFee);
             } else {
                 user.amount = user.amount.add(_amount);
             }
         }
         user.rewardDebt = user.amount.mul(pool.accMarsPerShare).div(1e12);
-        user.depositedAt = block.timestamp;
         emit Deposit(msg.sender, _pid, _amount);
     }
 
@@ -213,12 +208,7 @@ contract Masterchef is Ownable {
             }
             _amount = _amount.sub(withdrawalFee);
             pool.lpToken.safeTransfer(address(msg.sender), _amount);
-            if (user.amount == 0) {
-                uint userIndexInHolders = getIndexInClimbHolders(msg.sender);
-                if (userIndexInHolders != 1e27) {
-                    _removeUserFromClimbHolders(userIndexInHolders);
-                }
-            }
+            nativeTokenHolderVault.updateHolders(msg.sender, address(pool.lpToken), user.amount, false);
         }
         user.rewardDebt = user.amount.mul(pool.accMarsPerShare).div(1e12);
         emit Withdraw(msg.sender, _pid, _amount);
@@ -267,10 +257,6 @@ contract Masterchef is Ownable {
         marsPerBlock = _marsPerBlock;
     }
 
-    function setClimbAddress(address _climb) public onlyOwner {
-        climb = _climb;
-    }
-
     function setWithdrawFee(uint256 _fee) public onlyOwner {
         require(_fee < 10000, 'invalid fee');
         withdrawFee = _fee;
@@ -281,27 +267,14 @@ contract Masterchef is Ownable {
         deductedWithdrawFee = _fee;
     }
 
-    function getIndexInClimbHolders(address _user) public view returns (uint) {
-        uint index = 1e27;
-        for (uint i = 0; i < climbHolders.length; i++) {
-            if (_user == climbHolders[i]) {
-                index = i;
-            }
-        }
-        return index;
-    }
-
-    function _removeUserFromClimbHolders(uint _index) internal {
-        for (uint i = _index; i < climbHolders.length - 1; i++) {
-            climbHolders[i] = climbHolders[i + 1];
-        }
-        climbHolders.pop();
+    function setNativeTokenHolderVault(address _nativeTokenHolderVault) public onlyOwner {
+        nativeTokenHolderVault = INativeTokenHolderVault(_nativeTokenHolderVault);
     }
 
     function _withdrawalFee(uint amount, uint depositedAt) internal view returns (uint) {
         if (depositedAt.add(WITHDRAWAL_FEE_DEDUCT_PERIOD) > block.timestamp) {
-            return amount.mul(withdrawFee).div(1000);
+            return amount.mul(withdrawFee).div(10000);
         }
-        return amount.mul(deductedWithdrawFee).div(1000);
+        return amount.mul(deductedWithdrawFee).div(10000);
     }
 }
